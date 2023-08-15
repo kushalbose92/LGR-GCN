@@ -4,5 +4,5 @@ Instructions to reproduce the results
 
 ```
 unzip 'splits.zip'
-sh ru.sh
+sh run.sh
 ```
