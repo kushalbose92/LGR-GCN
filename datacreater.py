@@ -106,28 +106,3 @@ class WikipediaData():
 
                 
                 
-data_obj = WikipediaData('Squirrel')
-cos_sim = torch.matmul(data_obj.x, torch.t(data_obj.x))
-# print(cos_sim.shape)
-
-cos_sim_val = []
-same_label_flag = []
-color_flag = []
-
-for i in range(data_obj.num_nodes):
-        for j in range(data_obj.num_nodes):
-                # print(cos_sim[i][j], "\t", data_obj.y[i], "\t", data_obj.y[j])
-                if data_obj.y[i] == data_obj.y[j]:
-                        same_label_flag.append(1)
-                        cos_sim_val.append(cos_sim[i][j].item()*100)
-                        color_flag.append('blue')
-                else:
-                        same_label_flag.append(0)
-                        cos_sim_val.append(cos_sim[i][j].item()*100)
-                        color_flag.append('red')
-                        
-import matplotlib.pyplot as plt                  
-plt.bar([i for i in range(data_obj.num_nodes * data_obj.num_nodes)], cos_sim_val, color=color_flag)
-plt.ylim(0.0, 1.0)
-plt.show()
-                        
