@@ -3,6 +3,6 @@
 Instructions to reproduce the results 
 
 ```
-unzip 'splits.zip
+unzip 'splits.zip'
 sh ru.sh
 ```
