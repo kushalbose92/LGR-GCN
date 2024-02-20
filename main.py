@@ -3,14 +3,16 @@ import numpy as np
 import argparse
 import os
 
-from train import run_training
 from models import MLP, GCN
-from utils import manipulate_neighbours, mask_generation, visualize
+from expt_models import GAT, APPNP_Net, GGCN, GCNII, GPRGNN, H2GCN, LINKX
+from utils import *
 from torch_geometric.utils.convert import from_scipy_sparse_matrix, to_scipy_sparse_matrix
 from torch_geometric.utils import homophily
-from train import generate_latent_feature, train
+from train import generate_latent_feature, train, mlp_training
 from test import test
 from datacreater import *
+
+
 
 if __name__ == '__main__':
 
@@ -38,13 +40,13 @@ if __name__ == '__main__':
   parser.add_argument('--top_k', type=int)
   parser.add_argument('--bottom_k', type=int)
 
-  # parser.add_argument('--alpha', type=float)
-  # parser.add_argument('--beta', type=float)
-  # parser.add_argument('--gamma', type=float)
+  parser.add_argument('--model', type=None)
+  parser.add_argument('--vanilla', type=None)
   parser.add_argument('--with_latent', type=None)
   parser.add_argument('--device', type=str)
 
   args = parser.parse_args()
+
   dataname = args.dataname
   seed = args.seed
 
@@ -68,9 +70,8 @@ if __name__ == '__main__':
   top_k = args.top_k
   bottom_k = args.bottom_k
 
-  # alpha = args.alpha
-  # beta = args.beta
-  # gamma = args.gamma
+  model_name = args.model
+  vanilla = args.vanilla
   with_latent = args.with_latent
   device = args.device
 
@@ -97,6 +98,7 @@ if __name__ == '__main__':
   else:
     print("Incorrect name of dataset")
 
+
   print("Loading " + dataname)
   data.x = data.x.to(device)
   data.edge_index = data.edge_index.to(device)
@@ -106,6 +108,7 @@ if __name__ == '__main__':
   edge_homo = homophily(data.edge_index, data.y, method = 'edge')
   # print("Edge homophily before rewiring:  ", edge_homo)
   
+  # W = (YX_c)(YX_c)^t
   
   edge_homo_list = []
   for i in range(10):
@@ -114,18 +117,13 @@ if __name__ == '__main__':
         PATH_MLP = os.getcwd()+ '/saved_models' + '/best_mlp_model_' + str(i)
         mlp = MLP(in_channels=data.num_features, hidden_channels = mlp_hidden,  out_channels = data.num_classes, dropout = mlp_dropout).to(device)
         optimizer = torch.optim.Adam(mlp.parameters(), lr = mlp_learning_rate, weight_decay = mlp_weight_decay)
-        best_val_acc, test_acc, pred = run_training(mlp, data, PATH_MLP, dataname, optimizer = optimizer, i = i, epochs = mlp_epoch)
+        best_val_acc, test_acc, pred, Y = mlp_training(mlp, data, PATH_MLP, dataname, optimizer = optimizer, i = i, epochs = mlp_epoch)
         # print(f"Test Accuracy on MLP: {test_acc}")
 
-        x_noise = torch.randn(1, mlp_hidden).to(device)
-        sim_weights = mlp.forward_1(x_noise)
-        alpha, beta, gamma = sim_weights[0].item(), sim_weights[1].item(), sim_weights[2].item()
-        # print("Weights ", alpha, beta, gamma)
-
-        X_tilda = generate_latent_feature(ae_hidden, data, pred, ae_epoch, ae_learning_rate, ae_weight_decay, device, alpha, beta, gamma)
+        X_tilda, X_c = generate_latent_feature(ae_hidden, data, pred, ae_epoch, ae_learning_rate, ae_weight_decay, device)
         
         print("Rewiring the input graph...")
-        A_tilda = manipulate_neighbours(data, pred, bottom_k, top_k, alpha, beta, gamma)
+        A_tilda = manipulate_neighbours(data, pred, bottom_k, top_k, Y, X_c)
         
         # edge_homo = homophily(A_tilda, data.y, method = 'edge')
         # print("Edge homophily for split " + str(i) + " is: ", edge_homo)
@@ -134,17 +132,46 @@ if __name__ == '__main__':
         criterion = torch.nn.CrossEntropyLoss()
         PATH_GCN = os.getcwd() + '/saved_models' + '/best_gcn_model_' + str(i)
 
+        # integrating with GNN architecture
         testAcc = []
-        model = GCN(data, hidden_channels = gcn_hidden, dropout=gcn_dropout, latent_dim = ae_hidden, with_latent=with_latent).to(device)
+
+        if vanilla == 'True':
+          X = data.x.to(device)
+          A = data.edge_index.to(device)
+          with_latent = False
+        else:
+          X = X_tilda.to(device)
+          A = A_tilda.to(device)
+
+
+        # defining GNN models
+        if model_name == 'GCN':
+          model = GCN(data, hidden_channels = gcn_hidden, dropout=gcn_dropout, latent_dim = ae_hidden, with_latent=with_latent).to(device)
+        elif model_name == 'GAT':
+          model = GAT(data.x.shape[1], gcn_hidden, data.num_classes, ae_hidden, with_latent).to(device)
+        elif model_name == 'APPNP':
+          model = APPNP_Net(data.x.shape[1], gcn_hidden, data.num_classes, ae_hidden, with_latent).to(device)
+        elif model_name == 'GCNII':
+          model = GCNII(data.x.shape[1], gcn_hidden, data.num_classes, ae_hidden, with_latent, num_layers=2, alpha=0.1, theta=0.1).to(device)
+        elif model_name == 'GPRGNN':
+          model = GPRGNN(data.x.shape[1], gcn_hidden, data.num_classes, ae_hidden, with_latent).to(device)
+        elif model_name == 'H2GCN':
+          model = H2GCN(data.x.shape[1], gcn_hidden, data.num_classes, A, X.shape[0], ae_hidden, with_latent).to(device)
+        # elif model_name == 'LINKX':
+        #   model = LINKX(data.x.shape[1], gcn_hidden, data.num_classes, ae_hidden, with_latent, num_layers=2, num_nodes=X.shape[0]).to(device)
+        else:
+          print("Invalid model name")
+        
         optimizer = torch.optim.Adam(model.parameters(), lr = gcn_learning_rate, weight_decay = gcn_weight_decay)
         
         f = np.load(os.getcwd() + '/splits/' + dataname.title() + '/' + dataname.lower() + '_split_0.6_0.2_'+str(i)+'.npz')
         train_idx, val_idx, test_idx = f['train_mask'], f['val_mask'], f['test_mask']
         train_mask, val_mask, test_mask = mask_generation(train_idx,data.num_nodes), mask_generation(val_idx, data.num_nodes), mask_generation(test_idx, data.num_nodes)
-        print("GCN training starts....")
+
+        print(model_name +  " training starts....")
         best_val_acc = 0
         for epoch in range(1, gcn_epoch+1):
-          loss, val_acc, train_acc = train(model, data, criterion, optimizer, X_tilda.to(device), A_tilda.to(device), train_mask, val_mask, with_latent = with_latent)
+          loss, val_acc, train_acc = train(model, data, criterion, optimizer, X.to(device), A.to(device), train_mask, val_mask, with_latent = with_latent)
           if val_acc > best_val_acc:
             torch.save({'epoch': epoch,
                       'model_state_dict': model.state_dict(),
@@ -153,7 +180,7 @@ if __name__ == '__main__':
                       'loss': loss},
                       PATH_GCN)
             best_val_acc = val_acc
-            test_acc, out = test(model, data, PATH_GCN, X_tilda.to(device), A_tilda.to(device), test_mask, with_latent = with_latent)
+            test_acc, out = test(model, data, PATH_GCN, X.to(device), A.to(device), test_mask, with_latent = with_latent)
             testAcc.append(test_acc)
             
           if epoch%100==0:
@@ -164,9 +191,15 @@ if __name__ == '__main__':
         print(f"Test Accuracy: {max(testAcc)}")
         visualize(out, dataname, i, color = data.y.cpu())
 
+        # cc_matrix = class_compatibility(data.y, A, dataname)
+        # print("class compatibility matrix ", cc_matrix)
+
         # draw_graph(data.edge_index, train_idx, val_idx, test_idx)
+
         print("---------------------------------------------\n")
+
   print(np.average(max_test)*100," +- ", np.std(max_test)*100)
+
   # print(edge_homo_list)
   # print("Average Edge Homophily: ", np.average(edge_homo_list))
 
