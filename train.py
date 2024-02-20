@@ -2,7 +2,7 @@ from utils import mask_generation
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import label_guided_similarity
+from utils import *
 from models import Autoencoder
 import numpy as np
 import os
@@ -10,7 +10,7 @@ import os
 from tqdm import tqdm 
 
 #### MLP
-def run_training(model, data, path, dataname, optimizer, i, epochs):
+def mlp_training(model, data, path, dataname, optimizer, i, epochs):
   
   PATH = path
   dataname = dataname
@@ -37,7 +37,7 @@ def run_training(model, data, path, dataname, optimizer, i, epochs):
         pred = out.argmax(dim=1)  
         test_correct = pred[test_mask] == data.y[test_mask] 
         test_acc = int(test_correct.sum()) / int(test_mask.sum())  
-        return test_acc, pred
+        return test_acc, pred, out
 
   best_val_acc = 0
    
@@ -61,16 +61,20 @@ def run_training(model, data, path, dataname, optimizer, i, epochs):
     if epoch%100==0:
       print(f' Epoch: {epoch:03d}, Loss: {loss:.4f}, Validation Acc: {val_acc: .4f} (Best validation acc: {best_val_acc: .4f})')
     
-  test_acc, pred = test(test_mask)
+  test_acc, pred, out = test(test_mask)
   
   print(f"Test Acc on MLP : {test_acc: .4f}")
-  return best_val_acc, test_acc, pred
+  return best_val_acc, test_acc, pred, out
 
 
 #### AutoEncoder
-def generate_latent_feature(latent_dim, data, pred, epoch, l_r, w_d, device, alpha, beta, gamma):
-      dict_of_labels, _ = label_guided_similarity(data, pred, alpha, beta, gamma)
+def generate_latent_feature(latent_dim, data, pred, epoch, l_r, w_d, device):
+      
+      dict_of_labels = class_dict_creation(data, pred)
+      # print("dict of label ", dict_of_labels)
+      
       dummy_x = np.zeros((data.num_nodes, data.num_features + latent_dim))
+      class_embed = torch.zeros(len(dict_of_labels), latent_dim).to(device)
       
       # print("Autoencoder training starts...")
       for i in tqdm(range(len(dict_of_labels))):
@@ -94,6 +98,9 @@ def generate_latent_feature(latent_dim, data, pred, epoch, l_r, w_d, device, alp
                     loss.backward()
                     optimizer.step()
                 latent_vec = encoded[0]
+                class_embed[i] = latent_vec
+                # print("Class embeddings ", class_embed.shape)
+                
             for j in range(len(dict_of_labels[i])):
                 a = torch.cat((data.x[dict_of_labels[i][j]], latent_vec)).cpu()
                 dummy_x[dict_of_labels[i][j]] = a.detach()
@@ -101,10 +108,10 @@ def generate_latent_feature(latent_dim, data, pred, epoch, l_r, w_d, device, alp
       dummy_x = dummy_x.astype(np.double)
       latent_x = torch.tensor(dummy_x)
       latent_x = latent_x.to(torch.float32)
-      return latent_x
+      return latent_x, class_embed
 
 
-### GCN model
+# general train function
 def train(model, data, criterion, optimizer, latent_x, new_edge_index, train_mask, val_mask, with_latent):
     model.train()
     optimizer.zero_grad()  
