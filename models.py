@@ -25,17 +25,17 @@ class MLP(torch.nn.Module):
         x = self.lin2(x)
         return F.log_softmax(x, dim=1)
 
-    def forward_1(self, x):
-        x = self.lin4(x)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.50, training=True)
-        x = self.lin5(x)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.50, training=True)
-        x = self.lin6(x)
-        x = torch.exp(x)
-        x = torch.sort(x, descending=True)[0][0]
-        return x
+    # def forward_1(self, x):
+    #     x = self.lin4(x)
+    #     x = F.relu(x)
+    #     x = F.dropout(x, p=0.50, training=True)
+    #     x = self.lin5(x)
+    #     x = F.relu(x)
+    #     x = F.dropout(x, p=0.50, training=True)
+    #     x = self.lin6(x)
+    #     x = torch.exp(x)
+    #     x = torch.sort(x, descending=True)[0][0]
+    #     return x
     
 
 class Autoencoder(nn.Module):
@@ -74,52 +74,3 @@ class GCN(torch.nn.Module):
         x = self.conv2(x, edge_index)
         return F.log_softmax(x, dim = 1)
 
-
-
-# class Sim_Weights_Net(nn.Module):
-#     def __init__(self):
-#         super(Sim_Weights_Net, self).__init__()
-
-#         self.lin1 = nn.Linear(32, 16)
-#         self.lin2 = nn.Linear(16, 8)
-#         self.lin3 = nn.Linear(8, 3)
-
-#     def forward(self):
-#         x = torch.randn(1, 32)
-#         x = self.lin1(x)
-#         x = F.relu(x)
-#         x = F.dropout(x, p=0.50, training=True)
-#         x = self.lin2(x)
-#         x = F.relu(x)
-#         x = F.dropout(x, p=0.50, training=True)
-#         x = self.lin3(x)
-#         x = torch.exp(x)
-#         x = torch.sort(x, descending=True)[0][0]
-#         return x
-
-        
-
-# class GCN(torch.nn.Module):
-#     def __init__(self, data, hidden_channels, dropout, latent_dim, with_latent):
-#         super(GCN, self).__init__()
-#         self.dropout = dropout
-
-#         if with_latent == 'True':
-#             self.init = nn.Linear(data.num_features + latent_dim, hidden_channels)
-#         else:
-#             self.init = nn.Linear(data.num_features, hidden_channels)
-
-#         self.conv1 = GCN2Conv(hidden_channels, 0.2, 0.3, 1)
-#         self.conv2 = GCN2Conv(hidden_channels, 0.2, 0.3, 2)
-
-#         self.last = nn.Linear(hidden_channels, data.num_classes)
-
-#     def forward(self, x, edge_index):
-#         x = self.init(x)
-#         x_0 = x
-#         x = self.conv1(x, x_0, edge_index)
-#         x = x.relu()
-#         x = F.dropout(x, p=self.dropout, training=self.training)
-#         x = self.conv2(x, x_0, edge_index)
-#         x = self.last(x)
-#         return F.log_softmax(x, dim = 1)
